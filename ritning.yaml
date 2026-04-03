@@ -1,0 +1,41 @@
+pipeline:
+  clean:
+    image: docker.io/library/rust:slim
+    commands:
+    - echo "Hello world from inside the container"
+  build_new:
+    image: docker.io/library/rust:slim
+    commands:
+      - cargo build
+    depends_on: [clean]
+  build_old:
+    image: docker.io/library/rust:slim
+    commands:
+      - cargo build
+    depends_on: [clean]
+  deploy:
+    image: docker.io/library/rust:slim
+    commands:
+      - cargo deploy
+    depends_on: [build_new, build_old]
+  test:
+    image: docker.io/library/rust:slim
+    commands:
+    - echo "Hello world from inside the container"
+  foobar:
+    image: docker.io/library/rust:slim
+    commands:
+      - cargo build
+    depends_on: [clean]
+  foo:
+    image: docker.io/library/rust:slim
+    commands:
+      - cargo build
+    depends_on: [foobar]
+  bar:
+    image: docker.io/library/rust:slim
+    commands:
+      - cargo deploy
+    depends_on: [foo, clean]
+
+

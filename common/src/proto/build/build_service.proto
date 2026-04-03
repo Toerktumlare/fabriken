@@ -1,0 +1,10 @@
+syntax = "proto3";
+
+package common.proto.build;
+
+import "build_types.proto";
+
+service Build {
+    rpc Run (BuildDef) returns (stream BuildUpdate);
+}
+

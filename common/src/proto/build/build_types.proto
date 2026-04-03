@@ -1,0 +1,50 @@
+syntax = "proto3";
+
+package common.proto.build;
+
+message BuildDef {
+  map<string, StepDef> steps = 1;
+  string project_root = 2;
+  map<string, string> env = 3;
+}
+
+message StepDef {
+  string image = 1; 
+  repeated string commands = 2;
+  repeated string depends_on = 3;
+  map<string, string> env = 4;
+}
+
+message BuildStart {
+  // string build_id = 1;
+  // string timestamp = 2;
+}
+
+message LogEntry {
+  string step = 1;
+  string line = 2;
+  StreamType stream_type = 3;
+}
+
+message BuildEnd {
+  // bool success = 1;
+  // string exit_code = 2;
+}
+
+message EmptyEvent {}
+
+message BuildUpdate {
+  oneof update_type {
+    BuildStart start = 1;
+    LogEntry log = 2;
+    BuildEnd end = 3;
+    EmptyEvent pulling_image = 4;
+    EmptyEvent image_fetched = 5;
+  }
+}
+
+enum StreamType {
+  STREAM_TYPE_UNSPECIFIED = 0;
+  STREAM_TYPE_STDOUT = 1;
+  STREAM_TYPE_STDERR = 2;
+}

@@ -1,0 +1,26 @@
+[package]
+name = "controller"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+common = { path = "../common" }
+anyhow.workspace = true
+axum = { workspace = true, features = ["http2", "macros"] }
+prost.workspace = true
+prost-types.workspace = true
+serde = { workspace = true, features = ["derive"] }
+serde_json.workspace = true
+serde_yaml.workspace = true
+tokio = { workspace = true, features = ["full"] }
+tokio-stream.workspace = true
+tonic = { workspace = true, features = ["transport"] }
+tonic-prost.workspace = true
+axum-extra.workspace = true
+tracing.workspace = true
+tracing-subscriber.workspace = true
+
+[build-dependencies]
+prost-build = "0.14.3"
+protoc-bin-vendored = "3"
+tonic-prost-build = "0.14.5"
