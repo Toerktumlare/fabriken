@@ -57,6 +57,9 @@ async fn build_handler(
     Json(req): Json<BuildRequest>,
 ) -> Result<String> {
     let base_path = PathBuf::from(req.path);
+
+    info!("Trying to find project at: {:?}", base_path);
+
     let build_file = base_path.join("ritning.yaml");
 
     let file_content = fs::read_to_string(build_file).await?;
