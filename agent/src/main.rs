@@ -1,6 +1,6 @@
 use std::pin::Pin;
 
-use anyhow::Result;
+use anyhow::{Context, Result, anyhow};
 use common::{
     build::{
         BuildDef, BuildUpdate,
@@ -8,11 +8,12 @@ use common::{
     },
     parser::{DefaultPipelineProducer, PipelineProducer},
     runtime::{DefaultRuntime, Runtime},
+    startup::{RegistrationRequest, registration_client::RegistrationClient},
 };
-use tokio::sync::mpsc;
+use tokio::sync::{mpsc, oneshot};
 use tokio_stream::{Stream, wrappers::ReceiverStream};
 use tonic::{Request, Response, Status, transport::Server};
-use tracing::info;
+use tracing::{error, info};
 
 #[derive(Debug, Clone)]
 pub struct BuildController;
@@ -48,16 +49,62 @@ impl Build for BuildController {
 }
 
 #[tokio::main]
-async fn main() -> Result<(), Box<dyn std::error::Error>> {
+async fn main() -> Result<()> {
     tracing_subscriber::fmt::init();
 
-    let addr = "[::1]:50051".parse().unwrap();
-    let controller = BuildController; // your struct implementing Build
+    let (_health_reporter, health_service) = tonic_health::server::health_reporter();
+
+    let addr = "[::1]:50052".parse()?;
+    let controller = BuildController;
     let server = BuildServer::new(controller);
 
-    println!("GreeterServer listening on {addr}");
+    println!("Build Agent listening on {addr}");
 
-    Server::builder().add_service(server).serve(addr).await?;
+    let (tx_ready, rx_ready) = oneshot::channel();
+
+    let handle = tokio::spawn(async move {
+        Server::builder()
+            .add_service(health_service)
+            .add_service(server)
+            .serve_with_shutdown(addr, async {
+                tx_ready.send(()).unwrap();
+                tokio::signal::ctrl_c().await.ok();
+            })
+            .await
+    });
+
+    rx_ready
+        .await
+        .context("Server did not start up correctly")?;
+
+    let mut client = RegistrationClient::connect("http://[::1]:50051").await?;
+    let response = client
+        .register(RegistrationRequest {
+            name: "hungry_hippo".to_string(),
+            addr: addr.to_string(),
+        })
+        .await?
+        .into_inner();
+
+    if !response.success {
+        error!("Could not register agent with controller");
+        return Err(anyhow!("Could not register agent"));
+    }
+
+    info!("Agent registered. Press Ctrl+C to exit.");
+
+    tokio::select! {
+        res = handle => {
+            match res {
+                Ok(Ok(_)) => info!("Server exited naturally"),
+                Ok(Err(e)) => error!("Server error: {}", e),
+                Err(e) => error!("Server task panicked: {}", e),
+            }
+        }
+        _ = tokio::signal::ctrl_c() => {
+            info!("Ctrl+C received, shutting down...");
+        }
+    }
 
     Ok(())
 }

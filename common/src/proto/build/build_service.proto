@@ -1,8 +1,8 @@
 syntax = "proto3";
 
-package common.proto.build;
+package build;
 
-import "build_types.proto";
+import "build/build_types.proto";
 
 service Build {
     rpc Run (BuildDef) returns (stream BuildUpdate);

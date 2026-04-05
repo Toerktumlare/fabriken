@@ -1,0 +1,10 @@
+syntax = "proto3";
+
+package startup;
+
+import "startup/startup_types.proto";
+
+service Registration {
+    rpc Register (RegistrationRequest) returns (ConfigResponse);
+}
+

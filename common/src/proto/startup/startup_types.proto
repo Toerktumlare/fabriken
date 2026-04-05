@@ -1,0 +1,13 @@
+syntax = "proto3";
+
+package startup;
+
+message RegistrationRequest {
+  string name = 1; 
+  string addr = 2;
+}
+
+message ConfigResponse {
+  bool success = 1;
+}
+

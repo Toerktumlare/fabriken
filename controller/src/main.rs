@@ -1,14 +1,20 @@
-use std::{collections::HashMap, path::PathBuf};
+use std::{collections::HashMap, path::PathBuf, sync::Arc};
 
 use axum::{Json, Router, extract::State, http::StatusCode, response::IntoResponse, routing::post};
 use common::{
     build::{BuildDef, StepDef, build_client::BuildClient},
     models::BuildDefinition,
+    startup::registration_server::RegistrationServer,
 };
+use features::RegistrationController;
 use serde::Deserialize;
 use tokio::fs;
-use tonic::transport::Channel;
+use tonic::transport::{Channel, Server};
 use tracing::{error, info};
+
+use crate::features::{AgentRepository, HealthcheckService};
+
+mod features;
 
 type Result<T, E = ErrorResponse> = core::result::Result<T, E>;
 
@@ -102,7 +108,24 @@ struct AppState {
 async fn main() -> anyhow::Result<()> {
     tracing_subscriber::fmt::init();
 
-    let client = BuildClient::connect("http://[::1]:50051").await?;
+    info!("Starting up controller");
+
+    let agent_repository = Arc::new(AgentRepository::new());
+    let healthcheck_service = Arc::new(HealthcheckService::run(agent_repository.clone()));
+
+    let controller = RegistrationController {
+        agent_repository: agent_repository.clone(),
+        healthcheck_service: healthcheck_service.clone(),
+    };
+
+    let server = RegistrationServer::new(controller);
+
+    let addr = "[::1]:50051".parse()?;
+    println!("Registrations are open on {addr}");
+
+    Server::builder().add_service(server).serve(addr).await?;
+
+    let client = BuildClient::connect("http://[::1]:50052").await?;
     let state = AppState { client };
 
     let app = Router::new()
@@ -111,5 +134,8 @@ async fn main() -> anyhow::Result<()> {
 
     let listener = tokio::net::TcpListener::bind("0.0.0.0:3000").await?;
     axum::serve(listener, app).await?;
+
+    healthcheck_service.stop().await;
+
     Ok(())
 }

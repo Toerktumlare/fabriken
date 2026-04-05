@@ -11,10 +11,10 @@ fn main() -> Result<()> {
         &[
             "src/proto/build/build_service.proto",
             "src/proto/build/build_types.proto",
-            "src/proto/status/health_service.proto",
-            "src/proto/status/health_types.proto",
+            "src/proto/startup/startup_service.proto",
+            "src/proto/startup/startup_types.proto",
         ],
-        &["src/proto/build", "src/proto/status"],
+        &["src/proto"],
     )?;
     Ok(())
 }

@@ -15,10 +15,12 @@ serde_yaml.workspace = true
 tokio = { workspace = true, features = ["full"] }
 tokio-stream.workspace = true
 tonic = { workspace = true, features = ["transport"] }
+tokio-util.workspace = true
 tonic-prost.workspace = true
 axum-extra.workspace = true
 tracing.workspace = true
 tracing-subscriber.workspace = true
+tonic-health.workspace = true
 
 [build-dependencies]
 prost-build = "0.14.3"

@@ -8,5 +8,11 @@ pub mod scheduler;
 pub mod build {
     use tonic::include_proto;
 
-    include_proto!("common.proto.build");
+    include_proto!("build");
+}
+
+pub mod startup {
+    use tonic::include_proto;
+
+    include_proto!("startup");
 }

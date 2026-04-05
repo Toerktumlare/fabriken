@@ -1,6 +1,6 @@
 syntax = "proto3";
 
-package common.proto.build;
+package build;
 
 message BuildDef {
   map<string, StepDef> steps = 1;
