@@ -2,7 +2,10 @@ use std::sync::Arc;
 
 use tokio::sync::mpsc;
 
-use crate::{channels::ExecutorCommand, executor::ExecutionStep};
+use crate::{
+    channels::ExecutorCommand,
+    executor::{ContainerizeStep, RunStep},
+};
 
 #[derive(Debug)]
 pub struct ExecSender {
@@ -22,8 +25,15 @@ impl ExecSender {
 }
 
 impl ExecSender {
-    pub async fn run_step(&self, step: Arc<ExecutionStep>) {
+    pub async fn run_step(&self, step: Arc<RunStep>) {
         let _ = self.tx.send(ExecutorCommand::RunStep(step.clone())).await;
+    }
+
+    pub async fn run_containerize_step(&self, step: Arc<ContainerizeStep>) {
+        let _ = self
+            .tx
+            .send(ExecutorCommand::BuildContainer(step.clone()))
+            .await;
     }
 
     pub async fn shutdown(&self) {

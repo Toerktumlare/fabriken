@@ -29,10 +29,13 @@ impl Build for BuildController {
         info!("{:#?}", request);
 
         let build_def = request.into_inner();
-        let pipeline = DefaultPipelineProducer::produce(build_def.into())
+        info!("Constructing pipeline from received Build Definition");
+        let (global_data, pipeline) = DefaultPipelineProducer::produce(build_def.into())
             .await
             .unwrap();
-        let mut global_rx = DefaultRuntime::run(pipeline).await;
+
+        info!("Starting up the runtime");
+        let mut global_rx = DefaultRuntime::run(pipeline, global_data).await;
 
         let (grpc_tx, grpc_rx) = mpsc::channel(100);
         tokio::spawn(async move {

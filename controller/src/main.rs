@@ -1,15 +1,16 @@
-use std::{collections::HashMap, path::PathBuf, sync::Arc};
+use std::{path::PathBuf, sync::Arc};
 
 use axum::{Json, Router, extract::State, http::StatusCode, response::IntoResponse, routing::post};
 use common::{
-    build::{BuildDef, StepDef, build_client::BuildClient},
+    build::{BuildDef, Context, StepDef, build_client::BuildClient},
     models::BuildDefinition,
     startup::registration_server::RegistrationServer,
 };
 use features::RegistrationController;
 use serde::Deserialize;
 use tokio::fs;
-use tonic::transport::{Channel, Server};
+use tokio_util::sync::CancellationToken;
+use tonic::transport::Server;
 use tracing::{error, info};
 
 use crate::features::{AgentRepository, HealthcheckService};
@@ -59,7 +60,7 @@ pub struct BuildRequest {
 
 #[axum::debug_handler]
 async fn build_handler(
-    State(state): State<AppState>,
+    State(_state): State<AppState>,
     Json(req): Json<BuildRequest>,
 ) -> Result<String> {
     let base_path = PathBuf::from(req.path);
@@ -71,21 +72,25 @@ async fn build_handler(
     let file_content = fs::read_to_string(build_file).await?;
     let definition: BuildDefinition = serde_yaml::from_str(&file_content)?;
 
-    let steps: HashMap<String, StepDef> = definition
+    dbg!(&definition);
+
+    let steps: Vec<StepDef> = definition
         .pipeline
         .into_iter()
-        .map(|(k, v)| (k, v.into()))
+        .map(|step| step.into())
         .collect();
 
     let build_def = BuildDef {
         steps,
-        project_root: base_path.to_string_lossy().into(),
         env: definition.env,
+        context: Some(Context {
+            project_root: base_path.to_string_lossy().into(),
+        }),
     };
 
     let request = tonic::Request::new(build_def);
 
-    let mut client = state.client.clone();
+    let mut client = BuildClient::connect("http://[::1]:50052").await?;
     let response = client.run(request).await?;
 
     let mut stream = response.into_inner();
@@ -100,9 +105,7 @@ async fn build_handler(
 }
 
 #[derive(Clone)]
-struct AppState {
-    client: BuildClient<Channel>,
-}
+struct AppState {}
 
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
@@ -123,17 +126,55 @@ async fn main() -> anyhow::Result<()> {
     let addr = "[::1]:50051".parse()?;
     println!("Registrations are open on {addr}");
 
-    Server::builder().add_service(server).serve(addr).await?;
+    let shutdown = CancellationToken::new();
 
-    let client = BuildClient::connect("http://[::1]:50052").await?;
-    let state = AppState { client };
+    let grpc_shutdown = shutdown.clone();
+    let http_shutdown = shutdown.clone();
+
+    let grpc_task = tokio::spawn(async move {
+        Server::builder()
+            .add_service(server)
+            .serve_with_shutdown(addr, async move {
+                grpc_shutdown.cancelled().await;
+            })
+            .await
+            .unwrap();
+    });
+
+    let state = AppState {};
 
     let app = Router::new()
         .route("/build", post(build_handler))
         .with_state(state);
 
-    let listener = tokio::net::TcpListener::bind("0.0.0.0:3000").await?;
-    axum::serve(listener, app).await?;
+    let http_task = tokio::spawn(async move {
+        let listener = tokio::net::TcpListener::bind("0.0.0.0:3000").await.unwrap();
+
+        axum::serve(listener, app)
+            .with_graceful_shutdown(async move {
+                http_shutdown.cancelled().await;
+            })
+            .await
+            .unwrap();
+    });
+
+    let ctrl_c = tokio::signal::ctrl_c();
+
+    println!("Rest API is up and listening on 3000");
+    tokio::select! {
+        _ = ctrl_c => {
+            println!("Ctrl+C received");
+            shutdown.cancel();
+        }
+        _ = grpc_task => {
+            eprintln!("gRPC exited → shutting down system");
+            shutdown.cancel();
+        }
+        _ = http_task => {
+            eprintln!("HTTP exited → shutting down system");
+            shutdown.cancel();
+        }
+    }
 
     healthcheck_service.stop().await;
 

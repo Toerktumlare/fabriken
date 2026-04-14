@@ -1,41 +1,67 @@
+env:
+  BUILD_ID: "123"
+  REGISTRY: registry.local
+
 pipeline:
-  clean:
-    image: docker.io/library/rust:slim
-    commands:
-    - echo "Hello world from inside the container"
-  build_new:
-    image: docker.io/library/rust:slim
-    commands:
-      - cargo build
-    depends_on: [clean]
-  build_old:
-    image: docker.io/library/rust:slim
-    commands:
-      - cargo build
-    depends_on: [clean]
-  deploy:
-    image: docker.io/library/rust:slim
-    commands:
-      - cargo deploy
-    depends_on: [build_new, build_old]
-  test:
-    image: docker.io/library/rust:slim
-    commands:
-    - echo "Hello world from inside the container"
-  foobar:
-    image: docker.io/library/rust:slim
-    commands:
-      - cargo build
-    depends_on: [clean]
-  foo:
-    image: docker.io/library/rust:slim
-    commands:
-      - cargo build
-    depends_on: [foobar]
-  bar:
-    image: docker.io/library/rust:slim
-    commands:
-      - cargo deploy
-    depends_on: [foo, clean]
+
+- name: clean
+  image: docker.io/library/rust:slim
+  run:
+    - cargo clean
+
+# - name: test
+#   image: docker.io/library/rust:slim
+#   run:
+#     - cargo test
+#   depends_on: [clean]
+
+- name: build
+  image: docker.io/library/rust:slim
+  run:
+    - cargo build
+  depends_on: [clean]
+
+# - name: build container
+#   env:
+#     IMAGE_NAME: fabriken
+#   containerize:
+#     builder: podman
+#     file: ./Dockerfile
+#     context: .
+#     image: ${IMAGE_NAME}:${BUILD_ID}
+
+# - name: push container
+#   image: my-app:${BUILD_ID}
+#   registry: registry.local/my-app:${BUILD_ID}
+#   auth: basic
+#   username: {USERNAME}
+#   password: {PASSWORD}
 
 
+# - name: push artifact to nexus
+#   push:
+#     artifact: file:target/app.jar
+#     target:
+#       type: nexus
+#       url: https://nexus.company.local
+#       repository: maven-releases
+#       format: maven
+#       path: com/myorg/app/${VERSION}/app-${VERSION}.jar
+#       auth:
+#         type: basic
+#         username: ${NEXUS_USER}
+#         password: ${NEXUS_PASS}
+
+# - name: upload artifacts
+#   push:
+#     artifact: file:target/test-report.zip
+#     target:
+#       type: storage
+#       provider: s3
+#       bucket: fabriken-artifacts
+#       key: builds/${BUILD_ID}/test-report.zip
+#       region: eu-north-1
+#       auth:
+#         type: access-key
+#         access_key: ${AWS_KEY}
+#         secret_key: ${AWS_SECRET}

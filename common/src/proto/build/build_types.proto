@@ -3,16 +3,36 @@ syntax = "proto3";
 package build;
 
 message BuildDef {
-  map<string, StepDef> steps = 1;
-  string project_root = 2;
-  map<string, string> env = 3;
+  repeated StepDef steps = 1;
+  map<string, string> env = 2;
+  Context context = 3;
 }
 
 message StepDef {
-  string image = 1; 
-  repeated string commands = 2;
-  repeated string depends_on = 3;
-  map<string, string> env = 4;
+  string name = 1;
+  optional string image = 2; 
+  repeated string run = 3;
+  repeated string depends_on = 4;
+  map<string, string> env = 5;
+  Containerize containerize = 6;
+}
+
+message Context {
+  string project_root = 1;
+}
+
+message Containerize {
+  Builder builder = 1;
+  string file = 2;
+  string context = 3; 
+  string image = 4;
+}
+
+
+enum Builder {
+  PODMAN = 0;
+  DOCKER = 1;
+  BUILDAH = 2;
 }
 
 message BuildStart {
@@ -40,6 +60,10 @@ message BuildUpdate {
     BuildEnd end = 3;
     EmptyEvent pulling_image = 4;
     EmptyEvent image_fetched = 5;
+    EmptyEvent step_started = 6;
+    EmptyEvent step_ended = 7;
+    EmptyEvent containerizing_started = 8;
+    EmptyEvent containerizing_done = 9;
   }
 }
 

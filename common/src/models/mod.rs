@@ -1,70 +1,50 @@
-use std::{collections::HashMap, path::PathBuf};
-
-use indexmap::IndexMap;
-use serde::Deserialize;
+use std::path::PathBuf;
 
 use crate::build::{BuildDef, StepDef};
+pub mod build_definition;
 mod context;
 
+pub use build_definition::BuildDefinition;
+pub use build_definition::Context;
+pub use build_definition::Step;
 pub use context::BuildContext;
 
-#[derive(Debug, Deserialize)]
-pub struct BuildDefinition {
-    pub pipeline: IndexMap<String, StepDefinition>,
-
-    #[serde(default)]
-    pub env: HashMap<String, String>,
-
-    #[serde(skip)]
-    pub project_root: PathBuf,
-}
-
-#[derive(Debug, Deserialize, Clone)]
-pub struct StepDefinition {
-    pub image: String,
-
-    #[serde(default)]
-    pub env: HashMap<String, String>,
-
-    #[serde(default)]
-    pub commands: Vec<String>,
-
-    #[serde(default)]
-    pub depends_on: Vec<String>,
-}
-
-impl From<StepDefinition> for StepDef {
-    fn from(value: StepDefinition) -> Self {
-        StepDef {
+impl From<StepDef> for Step {
+    fn from(value: StepDef) -> Self {
+        Step {
+            name: value.name,
             image: value.image,
-            commands: value.commands,
+            run: value.run,
             depends_on: value.depends_on,
             env: value.env,
+            containerize: None,
+            push: None,
         }
     }
 }
 
-impl From<StepDef> for StepDefinition {
-    fn from(value: StepDef) -> Self {
-        StepDefinition {
+impl From<Step> for StepDef {
+    fn from(value: Step) -> Self {
+        StepDef {
+            name: value.name,
             image: value.image,
-            commands: value.commands,
+            run: value.run,
             depends_on: value.depends_on,
             env: value.env,
+            containerize: None,
         }
     }
 }
 
 impl From<BuildDef> for BuildDefinition {
     fn from(value: BuildDef) -> Self {
+        let context = value.context.unwrap();
         BuildDefinition {
-            pipeline: value
-                .steps
-                .into_iter()
-                .map(|(k, v)| (k, v.into()))
-                .collect(),
-            project_root: PathBuf::from(value.project_root),
+            pipeline: value.steps.into_iter().map(|step| step.into()).collect(),
             env: value.env,
+            context: Context {
+                project_root: PathBuf::from(context.project_root),
+            },
         }
     }
 }

@@ -1,4 +1,4 @@
-use std::collections::HashMap;
+use std::{collections::HashMap, sync::Arc};
 
 use async_trait::async_trait;
 use petgraph::{
@@ -9,7 +9,7 @@ use tracing::info;
 
 use crate::{
     channels::{ExecSender, ExecutorEvent, GlobalEvent, GlobalSender, SchedReceiver},
-    parser::SchedulerData,
+    parser::{ExecutionStep, Pipeline},
     scheduler::Scheduler,
 };
 
@@ -34,7 +34,7 @@ impl DefaultScheduler {
 
 #[async_trait]
 impl Scheduler for DefaultScheduler {
-    async fn schedule(&mut self, pipeline: &SchedulerData) -> anyhow::Result<()> {
+    async fn schedule(&mut self, pipeline: &Pipeline) -> anyhow::Result<()> {
         let graph = &pipeline.graph;
 
         self.global_tx.emit(GlobalEvent::BuildStart).await;
@@ -47,7 +47,7 @@ impl Scheduler for DefaultScheduler {
             // execute all steps that have 0 dependencies
             if count == 0 {
                 let step = pipeline.get_step(&node).unwrap();
-                self.to_exec.run_step(step.clone()).await;
+                self.execute(step).await;
             }
         }
 
@@ -70,7 +70,7 @@ impl Scheduler for DefaultScheduler {
                         *count -= 1;
                         if *count == 0 {
                             let step = pipeline.get_step(&next).unwrap();
-                            self.to_exec.run_step(step.clone()).await;
+                            self.execute(step).await;
                         }
                     }
                 }
@@ -80,5 +80,16 @@ impl Scheduler for DefaultScheduler {
         self.global_tx.emit(GlobalEvent::BuildEnd).await;
 
         Ok(())
+    }
+}
+
+impl DefaultScheduler {
+    async fn execute(&self, step: ExecutionStep) {
+        match step {
+            ExecutionStep::RunStep(step) => self.to_exec.run_step(Arc::new(step)).await,
+            ExecutionStep::ContainerizeStep(step) => {
+                self.to_exec.run_containerize_step(Arc::new(step)).await
+            }
+        }
     }
 }

@@ -1,12 +1,12 @@
 use async_trait::async_trait;
 
-use crate::parser::SchedulerData;
-
 mod default;
 
 pub use default::DefaultScheduler;
 
+use crate::parser::Pipeline;
+
 #[async_trait]
 pub trait Scheduler {
-    async fn schedule(&mut self, pipeline: &SchedulerData) -> anyhow::Result<()>;
+    async fn schedule(&mut self, pipeline: &Pipeline) -> anyhow::Result<()>;
 }

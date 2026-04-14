@@ -1,11 +1,13 @@
 use async_trait::async_trait;
 use std::sync::Arc;
-use tokio::io::AsyncBufReadExt;
 use tokio::io::{AsyncBufRead, AsyncRead};
+use tokio::io::{AsyncBufReadExt, BufReader};
+use tokio::process::Child;
 
 use crate::build::build_update::UpdateType;
 use crate::build::{self, BuildEnd, BuildStart, BuildUpdate, EmptyEvent, LogEntry};
-use crate::{executor::ExecutionStep, parser::StepId};
+use crate::executor::ContainerizeStep;
+use crate::{executor::RunStep, parser::StepId};
 
 mod exec;
 mod global;
@@ -20,8 +22,12 @@ pub enum GlobalEvent {
     Log(LogEvent),
     BuildStart,
     BuildEnd,
+    StepStarted,
+    StepEnded,
     PullingImage,
     ImageFetched,
+    ContainerizingStarted,
+    ContainerizingDone,
 }
 
 impl From<GlobalEvent> for BuildUpdate {
@@ -43,6 +49,10 @@ impl From<GlobalEvent> for BuildUpdate {
             GlobalEvent::BuildEnd => UpdateType::End(BuildEnd {}),
             GlobalEvent::PullingImage => UpdateType::PullingImage(EmptyEvent {}),
             GlobalEvent::ImageFetched => UpdateType::ImageFetched(EmptyEvent {}),
+            GlobalEvent::StepEnded => UpdateType::StepEnded(EmptyEvent {}),
+            GlobalEvent::StepStarted => UpdateType::StepEnded(EmptyEvent {}),
+            GlobalEvent::ContainerizingStarted => UpdateType::ContainerizingStarted(EmptyEvent {}),
+            GlobalEvent::ContainerizingDone => UpdateType::ContainerizingDone(EmptyEvent {}),
         };
 
         BuildUpdate {
@@ -66,7 +76,8 @@ pub enum StreamType {
 
 #[derive(Debug)]
 pub enum ExecutorCommand {
-    RunStep(Arc<ExecutionStep>),
+    RunStep(Arc<RunStep>),
+    BuildContainer(Arc<ContainerizeStep>),
     Shutdown,
 }
 
@@ -81,7 +92,7 @@ pub trait LogStreamer {
     async fn stream<R>(
         &mut self,
         reader: R,
-        name: String,
+        name: &str,
         stream_type: StreamType,
     ) -> anyhow::Result<()>
     where
@@ -97,29 +108,39 @@ impl StdStreamer {
     pub fn new(log_sender: GlobalSender) -> Self {
         Self { log_sender }
     }
+
+    pub async fn process(&self, name: &str, child: &mut Child) {
+        let stdout = child.stdout.take().unwrap();
+        let stderr = child.stderr.take().unwrap();
+
+        let stdout_lines = BufReader::new(stdout);
+        let stderr_lines = BufReader::new(stderr);
+
+        let out = stream(stdout_lines, name, StreamType::Stdout, &self.log_sender);
+        let err = stream(stderr_lines, name, StreamType::Stderr, &self.log_sender);
+
+        let (_, _) = tokio::join!(out, err);
+    }
 }
 
-#[async_trait]
-impl LogStreamer for StdStreamer {
-    async fn stream<R>(
-        &mut self,
-        reader: R,
-        name: String,
-        stream_type: StreamType,
-    ) -> anyhow::Result<()>
-    where
-        R: AsyncRead + AsyncBufRead + Unpin + Send,
-    {
-        let mut lines = reader.lines();
-        while let Some(line) = lines.next_line().await? {
-            let log_event = LogEvent {
-                step: name.clone(),
-                line: line.trim_end().to_string(),
-                stream: stream_type.clone(),
-            };
-            self.log_sender.emit(GlobalEvent::Log(log_event)).await;
-        }
-
-        Ok(())
+async fn stream<R>(
+    reader: R,
+    name: &str,
+    stream_type: StreamType,
+    log_sender: &GlobalSender,
+) -> anyhow::Result<()>
+where
+    R: AsyncRead + AsyncBufRead + Unpin + Send,
+{
+    let mut lines = reader.lines();
+    while let Some(line) = lines.next_line().await? {
+        let log_event = LogEvent {
+            step: name.to_string().clone(),
+            line: line.trim_end().to_string(),
+            stream: stream_type.clone(),
+        };
+        log_sender.emit(GlobalEvent::Log(log_event)).await;
     }
+
+    Ok(())
 }

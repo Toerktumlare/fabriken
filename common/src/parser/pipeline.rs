@@ -3,7 +3,7 @@ use async_trait::async_trait;
 
 use crate::{
     models::BuildDefinition,
-    parser::{Pipeline, PipelineProducer},
+    parser::{GlobalData, Pipeline, PipelineProducer},
 };
 
 #[derive(Debug, Default)]
@@ -11,26 +11,32 @@ pub struct DefaultPipelineProducer;
 
 #[async_trait]
 impl PipelineProducer for DefaultPipelineProducer {
-    async fn produce(definition: BuildDefinition) -> anyhow::Result<Pipeline> {
-        let mut pipeline = Pipeline::new(definition.project_root, definition.env);
+    async fn produce(definition: BuildDefinition) -> anyhow::Result<(GlobalData, Pipeline)> {
+        let project_root = definition.context.project_root;
+        let global_data = GlobalData {
+            project_root,
+            env: definition.env,
+        };
+
+        let mut pipeline = Pipeline::new();
 
         // add nodes
-        for (name, step) in &definition.pipeline {
-            pipeline.add_step(name, step.clone());
+        for step in definition.pipeline.iter() {
+            pipeline.add_step(step.clone());
         }
 
         // add dependecy between nodes
         let mut has_dependency = false;
-        for (name, step) in &definition.pipeline {
+        for step in &definition.pipeline {
             for dependency in &step.depends_on {
-                pipeline.depends_on(name, dependency);
+                pipeline.depends_on(&step.name, dependency);
                 has_dependency = true;
             }
         }
 
         // if no explicit dependencies, just have prev depend on next
         if !has_dependency {
-            let names: Vec<_> = definition.pipeline.keys().collect();
+            let names: Vec<_> = definition.pipeline.iter().map(|step| &step.name).collect();
             for window in names.windows(2) {
                 pipeline.depends_on(window[1], window[0]);
             }
@@ -41,39 +47,43 @@ impl PipelineProducer for DefaultPipelineProducer {
             bail!("Screw this pipeline, its cyclic!");
         }
 
-        Ok(pipeline)
+        Ok((global_data, pipeline))
     }
 }
 
 #[cfg(test)]
 mod tests {
-    use crate::models::StepDefinition;
+    use crate::models::{Context, Step};
 
     use super::*;
-    use indexmap::{IndexMap, indexmap};
     use std::{collections::HashMap, path::PathBuf};
 
-    fn mock_step(image: &str, deps: Vec<&str>) -> StepDefinition {
-        StepDefinition {
-            image: image.to_string(),
-            commands: vec!["echo hello".to_string()],
+    fn mock_step(image: &str, deps: Vec<&str>) -> Step {
+        Step {
+            name: image.to_string(),
+            image: Some(image.to_string()),
+            run: vec!["echo hello".to_string()],
             depends_on: deps.into_iter().map(|s| s.to_string()).collect(),
             env: HashMap::new(),
+            containerize: None,
+            push: None,
         }
     }
 
     #[tokio::test]
     async fn test_sequential_fallback_ordering() -> anyhow::Result<()> {
-        let pipeline_map = indexmap! {
-            "A".to_string() => mock_step("clean", vec![]),
-            "B".to_string() => mock_step("build", vec![]),
-            "C".to_string() => mock_step("cleanup", vec![]),
-        };
+        let pipeline_map = vec![
+            mock_step("A", vec![]),
+            mock_step("B", vec![]),
+            mock_step("C", vec![]),
+        ];
 
         let definition = BuildDefinition {
             pipeline: pipeline_map,
-            project_root: PathBuf::from("/tmp"),
             env: HashMap::new(),
+            context: Context {
+                project_root: PathBuf::from("/tmp"),
+            },
         };
 
         let mut pipeline = DefaultPipelineProducer::produce(definition).await?;
@@ -91,16 +101,18 @@ mod tests {
 
     #[tokio::test]
     async fn test_explicit_dependencies_override_fallback() -> anyhow::Result<()> {
-        let pipeline_map = indexmap! {
-            "A".to_string() => mock_step("alpine", vec![]),
-            "B".to_string() => mock_step("alpine", vec![]),
-            "C".to_string() => mock_step("alpine", vec!["A"]),
-        };
+        let pipeline_map = vec![
+            mock_step("A", vec![]),
+            mock_step("B", vec![]),
+            mock_step("C", vec!["A"]),
+        ];
 
         let definition = BuildDefinition {
             pipeline: pipeline_map,
-            project_root: PathBuf::from("/tmp"),
             env: HashMap::new(),
+            context: Context {
+                project_root: PathBuf::from("/tmp"),
+            },
         };
 
         let mut pipeline = DefaultPipelineProducer::produce(definition).await?;
@@ -121,15 +133,17 @@ mod tests {
 
     #[tokio::test]
     async fn test_cyclic_dependency_error() -> anyhow::Result<()> {
-        let pipeline_map = indexmap! {
-            "node_a".to_string() => mock_step("alpine", vec!["node_b"]),
-            "node_b".to_string() => mock_step("alpine", vec!["node_a"]),
-        };
+        let pipeline_map = vec![
+            mock_step("node_a", vec!["node_b"]),
+            mock_step("node_b", vec!["node_a"]),
+        ];
 
         let definition = BuildDefinition {
             pipeline: pipeline_map,
-            project_root: PathBuf::from("/"),
             env: HashMap::new(),
+            context: Context {
+                project_root: PathBuf::from("/tmp"),
+            },
         };
 
         let result = DefaultPipelineProducer::produce(definition).await;
@@ -148,9 +162,11 @@ mod tests {
     #[tokio::test]
     async fn test_empty_pipeline() -> anyhow::Result<()> {
         let definition = BuildDefinition {
-            pipeline: IndexMap::new(),
-            project_root: PathBuf::from("/"),
+            pipeline: vec![],
             env: HashMap::new(),
+            context: Context {
+                project_root: PathBuf::from("/tmp"),
+            },
         };
 
         let result = DefaultPipelineProducer::produce(definition).await;

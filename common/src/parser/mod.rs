@@ -1,10 +1,10 @@
 use crate::{
-    executor::ExecutionStep,
-    models::{BuildContext, BuildDefinition, StepDefinition},
+    executor::{ContainerizeStep, RunStep},
+    models::{BuildContext, BuildDefinition, Step},
 };
 use async_trait::async_trait;
 use petgraph::{algo::is_cyclic_directed, prelude::DiGraphMap};
-use std::{collections::HashMap, path::PathBuf, sync::Arc};
+use std::{collections::HashMap, path::PathBuf};
 
 mod pipeline;
 
@@ -12,7 +12,7 @@ pub use pipeline::DefaultPipelineProducer;
 
 #[async_trait]
 pub trait PipelineProducer: Send + Sync + 'static {
-    async fn produce(definition: BuildDefinition) -> anyhow::Result<Pipeline>;
+    async fn produce(definition: BuildDefinition) -> anyhow::Result<(GlobalData, Pipeline)>;
 }
 
 pub type StepId = usize;
@@ -20,33 +20,42 @@ pub type StepId = usize;
 #[derive(Debug, Default)]
 pub struct Pipeline {
     pub graph: DiGraphMap<StepId, String>,
-    steps: HashMap<StepId, Arc<ExecutionStep>>,
+    steps: HashMap<StepId, ExecutionStep>,
     ids: HashMap<String, StepId>,
     next_id: StepId,
-    pub project_root: PathBuf,
-    pub env: HashMap<String, String>,
 }
 
 impl Pipeline {
-    pub fn new(project_root: PathBuf, env: HashMap<String, String>) -> Self {
+    pub fn new() -> Self {
         Self {
             graph: DiGraphMap::new(),
             steps: HashMap::new(),
             ids: HashMap::new(),
             next_id: 0,
-            project_root,
-            env,
         }
     }
 
-    pub fn add_step(&mut self, name: &str, step_def: StepDefinition) -> StepId {
+    pub fn add_step(&mut self, step_def: Step) -> StepId {
         let id = self.next_id;
-        let step = (id, step_def, name.to_owned()).into();
+        let name = step_def.name.clone();
+
+        if step_def.containerize.is_some() {
+            let step: ContainerizeStep = (id, step_def).into();
+            self.steps.insert(id, ExecutionStep::ContainerizeStep(step));
+        } else {
+            let step: RunStep = (id, step_def).into();
+            self.steps.insert(id, ExecutionStep::RunStep(step));
+        }
+
         self.graph.add_node(id);
-        self.steps.insert(id, Arc::new(step));
-        self.ids.insert(name.to_owned(), id);
+        self.ids.insert(name, id);
         self.next_id += 1;
+
         id
+    }
+
+    pub fn get_step(&self, step_id: &StepId) -> Option<ExecutionStep> {
+        self.steps.get(step_id).cloned()
     }
 
     pub fn depends_on(&mut self, step: &String, dependency: &String) {
@@ -57,22 +66,6 @@ impl Pipeline {
 
     pub fn is_cyclic(&mut self) -> bool {
         is_cyclic_directed(&self.graph)
-    }
-
-    pub fn split(self) -> (GlobalData, SchedulerData) {
-        let Pipeline {
-            graph,
-            steps,
-            ids,
-            next_id: _,
-            project_root,
-            env,
-        } = self;
-
-        (
-            GlobalData { project_root, env },
-            SchedulerData { graph, steps, ids },
-        )
     }
 }
 
@@ -91,14 +84,8 @@ impl From<BuildContext> for GlobalData {
     }
 }
 
-pub struct SchedulerData {
-    pub graph: DiGraphMap<StepId, String>,
-    steps: HashMap<StepId, Arc<ExecutionStep>>,
-    ids: HashMap<String, StepId>,
-}
-
-impl SchedulerData {
-    pub fn get_step(&self, step_id: &StepId) -> Option<Arc<ExecutionStep>> {
-        self.steps.get(step_id).cloned()
-    }
+#[derive(Debug, Clone)]
+pub enum ExecutionStep {
+    RunStep(RunStep),
+    ContainerizeStep(ContainerizeStep),
 }

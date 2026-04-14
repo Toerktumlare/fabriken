@@ -2,10 +2,8 @@ use async_trait::async_trait;
 
 use crate::{
     channels::{ExecSender, GlobalReceiver, GlobalSender, SchedSender},
-    executor::{
-        DefaultExecuteManager, ExecuteManager, executors::DefaultExecutor, runners::PodmanRunner,
-    },
-    parser::Pipeline,
+    executor::{DefaultExecuteManager, ExecuteManager},
+    parser::{GlobalData, Pipeline},
     runtime::Runtime,
     scheduler::{DefaultScheduler, Scheduler},
 };
@@ -14,11 +12,10 @@ pub struct DefaultRuntime;
 
 #[async_trait]
 impl Runtime for DefaultRuntime {
-    async fn run(pipeline: Pipeline) -> GlobalReceiver {
+    async fn run(pipeline: Pipeline, global_data: GlobalData) -> GlobalReceiver {
         let (exec_tx, exec_rx) = ExecSender::new(50);
         let (sched_tx, sched_rx) = SchedSender::new(50);
         let (global_tx, global_rx) = GlobalSender::new(50);
-        let (global_data, pipeline) = pipeline.split();
 
         // spawn scheduler
         let sched_global = global_tx.clone();
@@ -30,9 +27,8 @@ impl Runtime for DefaultRuntime {
         // spawn executor
         let exec_global = global_tx.clone();
         tokio::spawn(async move {
-            let runner = PodmanRunner::new(exec_global.clone());
-            let executor = DefaultExecutor::new(runner, exec_global);
-            let mut manager = DefaultExecuteManager::new(global_data, executor, sched_tx, exec_rx);
+            let mut manager =
+                DefaultExecuteManager::new(exec_global, global_data, sched_tx, exec_rx);
             manager.run().await.unwrap();
         });
 
