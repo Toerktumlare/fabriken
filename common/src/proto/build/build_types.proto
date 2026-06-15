@@ -14,15 +14,15 @@ message StepDef {
   repeated string run = 3;
   repeated string depends_on = 4;
   map<string, string> env = 5;
-  Containerize containerize = 6;
+  ContainerizeDef containerize = 6;
 }
 
 message Context {
   string project_root = 1;
 }
 
-message Containerize {
-  Builder builder = 1;
+message ContainerizeDef {
+  string builder = 1;
   string file = 2;
   string context = 3; 
   string image = 4;

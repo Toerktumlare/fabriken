@@ -69,6 +69,8 @@ impl CommandRunner for Podman {
         let child = Command::new("podman")
             .arg("pull")
             .arg(image)
+            .arg("--policy")
+            .arg("missing")
             .stdout(Stdio::piped())
             .stderr(Stdio::piped())
             .spawn()?;
@@ -85,7 +87,7 @@ impl Containerizer for Podman {
         step: &ContainerizeStep,
     ) -> anyhow::Result<Option<Child>> {
         let envs = merge_envs(&step.env, &ctx.env);
-        let env_args = into_args(envs);
+        let env_args = into_build_args(envs);
         let child = Command::new("podman")
             .arg("build")
             .args(env_args)
@@ -122,7 +124,7 @@ impl CommandRunner for Docker {
             ))
             .arg("-w")
             .arg("/workspace")
-            .arg(&step.image.clone().unwrap())
+            .arg(step.image.clone().unwrap())
             .arg("sh")
             .arg("-c")
             .arg(step.run.join(" && "))
@@ -155,7 +157,7 @@ impl Containerizer for Docker {
         step: &ContainerizeStep,
     ) -> anyhow::Result<Option<Child>> {
         let envs = merge_envs(&step.env, &ctx.env);
-        let env_args = into_args(envs);
+        let env_args = into_build_args(envs);
         let child = Command::new("docker")
             .arg("build")
             .args(env_args)
@@ -183,7 +185,7 @@ impl Containerizer for Buildah {
         step: &ContainerizeStep,
     ) -> anyhow::Result<Option<Child>> {
         let envs = merge_envs(&step.env, &ctx.env);
-        let env_args = into_args(envs);
+        let env_args = into_build_args(envs);
         let child = Command::new("buildah")
             .arg("build")
             .args(env_args)
@@ -204,6 +206,12 @@ impl Containerizer for Buildah {
 fn into_args(envs: HashMap<String, String>) -> Vec<String> {
     envs.iter()
         .flat_map(|(k, v)| vec!["-e".into(), format!("{}={}", k, v)])
+        .collect()
+}
+
+fn into_build_args(envs: HashMap<String, String>) -> Vec<String> {
+    envs.iter()
+        .flat_map(|(k, v)| vec!["--build-arg".into(), format!("{}={}", k, v)])
         .collect()
 }
 

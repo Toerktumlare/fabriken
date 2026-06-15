@@ -1,6 +1,5 @@
 env:
-  BUILD_ID: "123"
-  REGISTRY: registry.local
+  BUILD_ID: "latest"
 
 pipeline:
 
@@ -18,17 +17,16 @@ pipeline:
 - name: build
   image: docker.io/library/rust:slim
   run:
-    - cargo build
-  depends_on: [clean]
+    - cargo build --release
 
-# - name: build container
-#   env:
-#     IMAGE_NAME: fabriken
-#   containerize:
-#     builder: podman
-#     file: ./Dockerfile
-#     context: .
-#     image: ${IMAGE_NAME}:${BUILD_ID}
+- name: build container
+  env:
+    IMAGE_NAME: fabriken
+  containerize:
+    builder: buildah
+    file: ./Dockerfile
+    context: .
+    image: controller:latest
 
 # - name: push container
 #   image: my-app:${BUILD_ID}

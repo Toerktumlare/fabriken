@@ -50,7 +50,7 @@ impl From<GlobalEvent> for BuildUpdate {
             GlobalEvent::PullingImage => UpdateType::PullingImage(EmptyEvent {}),
             GlobalEvent::ImageFetched => UpdateType::ImageFetched(EmptyEvent {}),
             GlobalEvent::StepEnded => UpdateType::StepEnded(EmptyEvent {}),
-            GlobalEvent::StepStarted => UpdateType::StepEnded(EmptyEvent {}),
+            GlobalEvent::StepStarted => UpdateType::StepStarted(EmptyEvent {}),
             GlobalEvent::ContainerizingStarted => UpdateType::ContainerizingStarted(EmptyEvent {}),
             GlobalEvent::ContainerizingDone => UpdateType::ContainerizingDone(EmptyEvent {}),
         };

@@ -32,24 +32,26 @@ impl<R: CommandRunner> StepExecutor<R> {
     ) -> anyhow::Result<StepId> {
         let log_streamer = StdStreamer::new(self.global_emitter.clone());
 
-        let _ = self.global_emitter.emit(GlobalEvent::PullingImage).await;
-        let mut child = self
-            .runner
-            .pull(&step.image.clone().unwrap())
-            .await?
-            .unwrap();
-        log_streamer.process(&step.name, &mut child).await;
+        // let _ = self.global_emitter.emit(GlobalEvent::PullingImage).await;
+        // let mut child = self
+        //     .runner
+        //     .pull(&step.image.clone().unwrap())
+        //     .await?
+        //     .unwrap();
+        // log_streamer.process(&step.name, &mut child).await;
 
-        let status = child.wait().await.unwrap();
-        if !status.success() {
-            anyhow::bail!(
-                "Pulling image went wrong! StatusCode: {:?}",
-                status.code().unwrap()
-            );
-        }
+        // let status = child.wait().await.unwrap();
+        // if !status.success() {
+        //     anyhow::bail!(
+        //         "Pulling image went wrong! StatusCode: {:?}",
+        //         status.code().unwrap()
+        //     );
+        // }
 
-        let _ = self.global_emitter.emit(GlobalEvent::ImageFetched).await;
+        // let _ = self.global_emitter.emit(GlobalEvent::ImageFetched).await;
+
         let _ = self.global_emitter.emit(GlobalEvent::StepStarted).await;
+
         let mut child = self.runner.run(&ctx, &step).await?.unwrap();
         log_streamer.process(&step.name, &mut child).await;
 

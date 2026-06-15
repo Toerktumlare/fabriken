@@ -5,6 +5,7 @@ use crate::{
 use async_trait::async_trait;
 use petgraph::{algo::is_cyclic_directed, prelude::DiGraphMap};
 use std::{collections::HashMap, path::PathBuf};
+use tracing::info;
 
 mod pipeline;
 
@@ -39,11 +40,15 @@ impl Pipeline {
         let id = self.next_id;
         let name = step_def.name.clone();
 
+        dbg!(&step_def);
+
         if step_def.containerize.is_some() {
             let step: ContainerizeStep = (id, step_def).into();
+            info!("Added a containerize step {:#?}", step);
             self.steps.insert(id, ExecutionStep::ContainerizeStep(step));
         } else {
             let step: RunStep = (id, step_def).into();
+            info!("Added a RunStep step {:#?}", step);
             self.steps.insert(id, ExecutionStep::RunStep(step));
         }
 
